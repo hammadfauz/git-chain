@@ -1,0 +1,107 @@
+name: Git Chain Management
+
+on:
+  pull_request:
+    types: [opened, edited, closed]
+
+jobs:
+  check-parent-branch:
+    if: github.event.action == 'opened' || github.event.action == 'edited'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
+      - name: Fetch Git Notes
+        run: |
+          # Fetch notes from the remote
+          git fetch origin refs/notes/*:refs/notes/*
+
+      - name: Get Parent Branch from Notes
+        id: get-parent
+        run: |
+          # Get the parent branch from Git notes for the current branch
+          parent=$(git notes show "refs/heads/${{ github.event.pull_request.head.ref }}" 2>/dev/null | grep "parent:" | cut -d':' -f2)
+          echo "parent=$parent" >> $GITHUB_ENV
+
+      - name: Compare Base Branch with Parent
+        run: |
+          if [ -z "${{ env.parent }}" ]; then
+            echo "::warning::No parent branch is defined for the current branch."
+          elif [ "${{ github.event.pull_request.base.ref }}" != "${{ env.parent }}" ]; then
+            echo "::warning::The base branch (${{ github.event.pull_request.base.ref }}) is different from the parent branch (${{ env.parent }})."
+          fi
+
+  rebase-child-prs:
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
+      - name: Fetch Git Notes
+        run: |
+          # Fetch notes from the remote
+          git fetch origin refs/notes/*:refs/notes/*
+
+      - name: List Open Pull Requests
+        id: list-prs
+        run: |
+          # Fetch all open pull requests
+          curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/pulls > prs.json
+
+      - name: Rebase Child PRs
+        run: |
+          merged_branch="${{ github.event.pull_request.head.ref }}"
+          destination_branch="${{ github.event.pull_request.base.ref }}"
+
+          # Iterate through all open PRs
+          jq -c '.[]' prs.json | while read pr; do
+            pr_base=$(echo "$pr" | jq -r '.base.ref')
+            pr_number=$(echo "$pr" | jq -r '.number')
+
+            # Check if the PR's base branch matches the merged branch
+            if [ "$pr_base" == "$merged_branch" ]; then
+              echo "Rebasing PR #$pr_number to $destination_branch"
+              curl -X PATCH -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github+json" \
+                -d "{\"base\":\"$destination_branch\"}" \
+                https://api.github.com/repos/${{ github.repository }}/pulls/$pr_number
+            fi
+          done
+
+  update-notes:
+    if: github.event.action == 'closed' && github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v3
+
+      - name: Fetch Git Notes
+        run: |
+          # Fetch notes from the remote
+          git fetch origin refs/notes/*:refs/notes/*
+
+      - name: Update Parent-Child Relationships in Notes
+        run: |
+          merged_branch="${{ github.event.pull_request.head.ref }}"
+          destination_branch="${{ github.event.pull_request.base.ref }}"
+
+          # Iterate through all branches and update parent relationships
+          git for-each-ref --format="%(refname:short)" refs/heads/ | while read branch; do
+            # Get the parent branch from notes
+            parent=$(git notes show "refs/heads/$branch" 2>/dev/null | grep "parent:" | cut -d':' -f2)
+
+            # If the parent matches the merged branch, update it to the destination branch
+            if [ "$parent" == "$merged_branch" ]; then
+              echo "Updating parent of $branch to $destination_branch"
+              git notes add -f -m "parent:$destination_branch" "refs/heads/$branch"
+            fi
+          done
+
+      - name: Push Updated Notes
+        run: |
+          # Push updated notes back to the remote
+          git push origin refs/notes/*:refs/notes/*
