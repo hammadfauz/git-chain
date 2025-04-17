@@ -12,6 +12,10 @@ mkdir -p "$BIN_DIR"
 cat > "$CHAIN_SCRIPT" << 'EOF'
 #!/bin/bash
 
+get_trunk_branch() {
+  git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@'
+}
+
 # Add a parent to the current branch
 set_chain() {
   local parent="$1"
@@ -32,6 +36,8 @@ set_chain() {
 show_chain() {
   local current_branch
   current_branch=$(git rev-parse --abbrev-ref HEAD)
+  local trunk_branch
+  trunk_branch=$(get_trunk_branch)
 
   echo "Branch chain for '$current_branch':"
   local branch="$current_branch"
@@ -39,6 +45,8 @@ show_chain() {
     local parent
     parent=$(git notes show HEAD 2>/dev/null | grep "parent:" | cut -d':' -f2)
     if [ -z "$parent" ]; then
+      parent="$trunk_branch"
+      echo "$branch -> $parent (default)"
       break
     fi
     echo "$branch -> $parent"
