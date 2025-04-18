@@ -27,8 +27,17 @@ set_chain() {
     exit 1
   fi
 
+  # Check if the current branch already has a parent
+  existing_note_commit=$(git log --show-notes --pretty=format:"%H %N" | grep "git-chain:" | grep ":$current_branch" | head -n 1 | awk '{print $1}')
+  
+  if [ -n "$existing_note_commit" ]; then
+      echo "Current branch '$current_branch' already has a parent reference."
+      echo "Removing the existing parent reference from commit $existing_note_commit..."
+      git notes remove "$existing_note_commit"
+  fi
+
   # Add a note to the HEAD commit
-  git notes add -m "parent:$parent"
+  git notes add -m "git-chain:$parent:$current_branch"
   echo "Set parent of '$current_branch' to '$parent'."
 }
 
@@ -42,30 +51,60 @@ show_chain() {
   echo "Branch chain for '$current_branch':"
   local branch="$current_branch"
   while true; do
-    local parent
-    parent=$(git notes show HEAD 2>/dev/null | grep "parent:" | cut -d':' -f2)
-    if [ -z "$parent" ]; then
-      parent="$trunk_branch"
-      echo "$branch -> $parent (default)"
-      break
+    local note
+    note=$(git log --show-notes --format="%N" "$branch" | grep "git-chain:" | head -n 1')
+    if [ -z "$note" ]; then
+        echo "$branch -> $trunk_branch (default)"
+        break
     fi
+
+    local parent
+    parent=$(echo "$note" | cut -d':' -f2)
     echo "$branch -> $parent"
     branch="$parent"
-    git checkout "$parent" >/dev/null 2>&1
   done
-  git checkout "$current_branch" >/dev/null 2>&1
 }
 
 # Show all branch chains
 show_all_chains() {
-  echo "All branch chains:"
-  git log --all --notes --pretty=format:"%h %d" | grep "parent:" | while read -r line; do
-    local commit
-    commit=$(echo "$line" | awk '{print $1}')
-    local parent
-    parent=$(echo "$line" | grep "parent:" | cut -d':' -f2)
-    echo "$commit -> $parent"
-  done
+    echo "All branch chains:"
+
+    # Declare an associative array to map parent -> child relationships
+    declare -A branch_map
+
+    # Populate the branch_map
+    git log --all --show-notes --pretty=format:"%N" | grep "git-chain:" | while read -r line; do
+        parent=$(echo "$line" | cut -d':' -f2)
+        child=$(echo "$line" | cut -d':' -f3)
+        branch_map["$parent"]="$child"
+    done
+
+    # Find the starting branch
+    for branch in "${!branch_map[@]}"; do
+        is_child=0
+        for child in "${branch_map[@]}"; do
+            if [ "$branch" == "$child" ]; then
+                is_child=1
+                break
+            fi
+        done
+        if [ $is_child -eq 0 ]; then
+            start_branch="$branch"
+            break
+        fi
+    done
+
+    # Traverse the chain and print it
+    local trunk_branch
+    trunk_branch=$(get_trunk_branch)
+    chain="$trunk_branch (default)"
+    current_branch="$start_branch"
+    while [ -n "$current_branch" ]; do
+        chain+=" -> $current_branch"
+        current_branch="${branch_map[$current_branch]}"
+    done
+
+    echo "$chain"
 }
 
 # Sync notes with the remote

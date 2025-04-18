@@ -20,8 +20,9 @@ jobs:
       - name: Get Parent Branch from Notes
         id: get-parent
         run: |
-          # Get the parent branch from Git notes for the current branch
-          parent=$(git notes show "refs/heads/${{ github.event.pull_request.head.ref }}" 2>/dev/null | grep "parent:" | cut -d':' -f2)
+          # Search for the parent in the commit history
+          note=$(git log --show-notes --pretty=format:"%N" | grep "git-chain:" | grep ":${{ github.event.pull_request.head.ref }}" | head -n 1)
+          parent=$(echo "$note" | cut -d':' -f2)
           echo "parent=$parent" >> $GITHUB_ENV
 
       - name: Compare Base Branch with Parent
@@ -86,16 +87,25 @@ jobs:
         run: |
           merged_branch="${{ github.event.pull_request.head.ref }}"
           destination_branch="${{ github.event.pull_request.base.ref }}"
+          trunk_branch="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')"
 
           # Iterate through all branches and update parent relationships
           git for-each-ref --format="%(refname:short)" refs/heads/ | while read branch; do
             # Get the parent branch from notes
-            parent=$(git notes show "refs/heads/$branch" 2>/dev/null | grep "parent:" | cut -d':' -f2)
+            note=$(git log --show-notes --pretty=format:"%N" "refs/heads/$branch" | grep "git-chain:" | grep ":$branch" | head -n 1)
+            parent=$(echo "$note" | cut -d':' -f2)
 
             # If the parent matches the merged branch, update it to the destination branch
             if [ "$parent" == "$merged_branch" ]; then
-              echo "Updating parent of $branch to $destination_branch"
-              git notes add -f -m "parent:$destination_branch" "refs/heads/$branch"
+              if [ "$destination_branch" == "$trunk_branch" ]; then
+                # Remove the note if the destination branch is the trunk
+                echo "Updating parent of $branch to $trunk_branch"
+                git notes remove "refs/heads/$branch"
+              else
+                # Otherwise, update the note to point to the new destination branch
+                echo "Updating parent of $branch to $destination_branch"
+                git notes add -f -m "git-chain:$destination_branch:$branch" "refs/heads/$branch"
+              fi
             fi
           done
 
