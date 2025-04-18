@@ -121,6 +121,35 @@ sync_chain() {
   fi
 }
 
+# Clear the current branch's parent
+clear_chain() {
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+
+    if [ -z "$current_branch" ]; then
+        echo "You are not on a branch."
+        return
+    fi
+
+    # Get the first commit
+    local first_commit
+    first_commit=$(git rev-list --max-parents=0 HEAD)
+
+    # Fetch the JSON note
+    local json
+    json=$(git notes show "$first_commit" 2>/dev/null || echo "{}")
+
+    # Remove the current branch from the JSON tree
+    json=$(echo "$json" | jq --arg branch "$current_branch" '
+        del(.[$branch]) |
+        with_entries(.value |= map(select(. != $branch)))
+    ')
+
+    # Save the updated JSON back to the note
+    echo "$json" | git notes add -f "$first_commit" -m -
+    echo "Cleared parent of '$current_branch'."
+}
+
 # Main command handler
 case "$1" in
   "")
@@ -137,6 +166,9 @@ case "$1" in
     ;;
   --pull)
     sync_chain "pull"
+    ;;
+  --clear)
+    clear_chain
     ;;
   *)
     set_chain "$1"
