@@ -18,93 +18,94 @@ get_trunk_branch() {
 
 # Add a parent to the current branch
 set_chain() {
-  local parent="$1"
-  local current_branch
-  current_branch=$(git rev-parse --abbrev-ref HEAD)
+    local parent="$1"
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
 
-  if [ -z "$parent" ]; then
-    echo "Usage: git chain <parent>"
-    exit 1
-  fi
+    if [ -z "$parent" ]; then
+        echo "Usage: git chain <parent>"
+        exit 1
+    fi
 
-  # Check if the current branch already has a parent
-  existing_note_commit=$(git log --show-notes --pretty=format:"%H %N" | grep "git-chain:" | grep ":$current_branch" | head -n 1 | awk '{print $1}')
-  
-  if [ -n "$existing_note_commit" ]; then
-      echo "Current branch '$current_branch' already has a parent reference."
-      echo "Removing the existing parent reference from commit $existing_note_commit..."
-      git notes remove "$existing_note_commit"
-  fi
+    # Get the first commit
+    local first_commit
+    first_commit=$(git rev-list --max-parents=0 HEAD)
 
-  # Add a note to the HEAD commit
-  git notes add -m "git-chain:$parent:$current_branch"
-  echo "Set parent of '$current_branch' to '$parent'."
+    # Fetch the JSON note
+    local json
+    json=$(git notes show "$first_commit" 2>/dev/null || echo "{}")
+
+    # Update the JSON tree
+    json=$(echo "$json" | jq --arg parent "$parent" --arg child "$current_branch" '
+        .[$parent] += [$child] | .[$child] //= []
+    ')
+
+    # Save the updated JSON back to the note
+    echo "$json"
+    git notes add -f "$first_commit" -m "$json"
+    echo "Set parent of '$current_branch' to '$parent'."
 }
 
 # Show the current branch's chain
 show_chain() {
-  local current_branch
-  current_branch=$(git rev-parse --abbrev-ref HEAD)
-  local trunk_branch
-  trunk_branch=$(get_trunk_branch)
+    local current_branch
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
 
-  echo "Branch chain for '$current_branch':"
-  local branch="$current_branch"
-  while true; do
-    local note
-    note=$(git log --show-notes --format="%N" "$branch" | grep "git-chain:" | head -n 1)
-    if [ -z "$note" ]; then
-        echo "$branch -> $trunk_branch (default)"
-        break
+    if [ -z "$current_branch" ]; then
+        echo "You are not on a branch."
+        return
     fi
 
-    local parent
-    parent=$(echo "$note" | cut -d':' -f2)
-    echo "$branch -> $parent"
-    branch="$parent"
-  done
+    # Get the first commit
+    local first_commit
+    first_commit=$(git rev-list --max-parents=0 HEAD)
+
+    # Fetch the JSON note from the first commit
+    local json
+    json=$(git notes show "$first_commit" 2>/dev/null || echo "{}")
+
+    # Collect the chain in an array
+    declare -a chain
+    local branch="$current_branch"
+    while true; do
+        chain+=("$branch")
+
+        local parent
+        parent=$(echo "$json" | jq -r --arg child "$branch" '
+            to_entries[] | select(.value[] == $child) | .key
+        ')
+
+        if [ -z "$parent" ]; then
+            break
+        fi
+
+        branch="$parent"
+    done
+
+    # Reverse the chain for proper parent -> child order
+    echo "Branch chain for '$current_branch':"
+    for (( i=${#chain[@]}-1; i>=0; i-- )); do
+        if [ $i -eq 0 ]; then
+            echo -n "${chain[i]}"
+        else
+            echo -n "${chain[i]} -> "
+        fi
+    done
+    echo
 }
 
 # Show all branch chains
 show_all_chains() {
+    # Get the first commit
+    local first_commit
+    first_commit=$(git rev-list --max-parents=0 HEAD)
+
+    # Fetch the JSON note
+    local json
+    json=$(git notes show "$first_commit" 2>/dev/null || echo "{}")
+
     echo "All branch chains:"
-
-    # Declare an associative array to map parent -> child relationships
-    declare -A branch_map
-
-    # Populate the branch_map
-    git log --all --show-notes --pretty=format:"%N" | grep "git-chain:" | while read -r line; do
-        parent=$(echo "$line" | cut -d':' -f2)
-        child=$(echo "$line" | cut -d':' -f3)
-        branch_map["$parent"]="$child"
-    done
-
-    # Find the starting branch
-    for branch in "${!branch_map[@]}"; do
-        is_child=0
-        for child in "${branch_map[@]}"; do
-            if [ "$branch" == "$child" ]; then
-                is_child=1
-                break
-            fi
-        done
-        if [ $is_child -eq 0 ]; then
-            start_branch="$branch"
-            break
-        fi
-    done
-
-    # Traverse the chain and print it
-    local trunk_branch
-    trunk_branch=$(get_trunk_branch)
-    chain="$trunk_branch (default)"
-    current_branch="$start_branch"
-    while [ -n "$current_branch" ]; do
-        chain+=" -> $current_branch"
-        current_branch="${branch_map[$current_branch]}"
-    done
-
-    echo "$chain"
+    echo "$json" | jq -r 'to_entries[] | .key as $parent | .value[] | "\($parent) -> \(.)"'
 }
 
 # Sync notes with the remote
