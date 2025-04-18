@@ -26,9 +26,7 @@ jobs:
 
       - name: Compare Base Branch with Parent
         run: |
-          if [ -z "${{ env.parent }}" ]; then
-            echo "::warning::No parent branch is defined for the current branch."
-          elif [ "${{ github.event.pull_request.base.ref }}" != "${{ env.parent }}" ]; then
+          if [ -n "${{ env.parent }}" ] && [ "${{ github.event.pull_request.base.ref }}" != "${{ env.parent }}" ]; then
             echo "::warning::The base branch (${{ github.event.pull_request.base.ref }}) is different from the parent branch (${{ env.parent }})."
           fi
 
