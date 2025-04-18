@@ -52,7 +52,7 @@ show_chain() {
   local branch="$current_branch"
   while true; do
     local note
-    note=$(git log --show-notes --format="%N" "$branch" | grep "git-chain:" | head -n 1')
+    note=$(git log --show-notes --format="%N" "$branch" | grep "git-chain:" | head -n 1)
     if [ -z "$note" ]; then
         echo "$branch -> $trunk_branch (default)"
         break
