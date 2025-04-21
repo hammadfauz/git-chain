@@ -27,7 +27,7 @@ jobs:
           json=$(git notes show "$first_commit" 2>/dev/null || echo "{}")
 
           # Extract parent for the current branch
-          parent=$(echo "$json" | jq -r --arg child "${{ github.event.pull_request.head.ref }}" '
+          parent=$(echo "$json" | jq -c -r --arg child "${{ github.event.pull_request.head.ref }}" '
             to_entries[] | select(.value[] == $child) | .key
           ')
 
@@ -70,8 +70,8 @@ jobs:
 
           # Iterate through all open PRs
           jq -c '.[]' prs.json | while read pr; do
-            pr_base=$(echo "$pr" | jq -r '.base.ref')
-            pr_number=$(echo "$pr" | jq -r '.number')
+            pr_base=$(echo "$pr" | jq -c -r '.base.ref')
+            pr_number=$(echo "$pr" | jq -c -r '.number')
 
             # Check if the PR's base branch matches the merged branch
             if [ "$pr_base" == "$merged_branch" ]; then
@@ -105,7 +105,7 @@ jobs:
           json=$(git notes show "$first_commit" 2>/dev/null || echo "{}")
 
           # Update the JSON tree
-          updated_json=$(echo "$json" | jq --arg merged_branch "$merged_branch" --arg destination_branch "$destination_branch" '
+          updated_json=$(echo "$json" | jq -c --arg merged_branch "$merged_branch" --arg destination_branch "$destination_branch" '
             to_entries | map(
               if .key == $merged_branch then
                 .key = $destination_branch
