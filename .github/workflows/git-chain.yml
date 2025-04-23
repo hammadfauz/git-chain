@@ -2,20 +2,25 @@ name: Git Chain Management
 
 on:
   pull_request:
-    types: [opened, edited, closed]
+    types: [opened, edited, closed, synchronize]
 
 jobs:
   check-parent-branch:
-    if: github.event.action == 'opened' || github.event.action == 'edited'
+    if: github.event.action == 'opened' || github.event.action == 'edited' || github.event.action == 'synchronize'
     runs-on: ubuntu-latest
     steps:
       - name: Check out the repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Fetch Git Notes
         run: |
+          # Configure Git to use the token for authentication
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           # Fetch notes from the remote
-          git fetch origin refs/notes/*:refs/notes/*
+          git fetch --force origin refs/notes/*:refs/notes/*
 
       - name: Get Parent Branch from JSON Note
         id: get-parent
@@ -30,14 +35,16 @@ jobs:
           parent=$(echo "$json" | jq -c -r --arg child "${{ github.event.pull_request.head.ref }}" '
             to_entries[] | select(.value[] == $child) | .key
           ')
-
           echo "parent=$parent" >> $GITHUB_ENV
 
-      - name: Compare Base Branch with Parent
+      - name: Fail if base branch is not the parent branch
+        if: ${{ env.parent != '' && github.event.pull_request.base.ref != env.parent }}
         run: |
-          if [ -n "${{ env.parent }}" ] && [ "${{ github.event.pull_request.base.ref }}" != "${{ env.parent }}" ]; then
-            echo "::warning::The base branch (${{ github.event.pull_request.base.ref }}) is different from the parent branch (${{ env.parent }})."
-          fi
+          echo "Error: The base branch (${GITHUB_EVENT_PULL_REQUEST_BASE_REF}) is different from the parent branch (${PARENT})."
+          exit 1
+        env:
+          PARENT: ${{ env.parent }}
+          GITHUB_EVENT_PULL_REQUEST_BASE_REF: ${{ github.event.pull_request.base.ref }}
 
   rebase-child-prs:
     if: github.event.action == 'closed' && github.event.pull_request.merged == true
