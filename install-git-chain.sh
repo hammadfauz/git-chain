@@ -41,4 +41,27 @@ if ! echo "$PATH" | grep -q "$BIN_DIR"; then
   echo "Added $BIN_DIR to PATH. Restart your shell or run 'source ~/.bashrc' to apply changes."
 fi
 
+# Add Bash completion for git chain
+COMPLETION_SCRIPT=$(cat <<'EOF'
+_git_chain() {
+    local cur prev branches
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    if [[ "$prev" == "chain" ]]; then
+        branches=$(git for-each-ref --format='%(refname:short)' refs/heads/)
+        COMPREPLY=( $(compgen -W "$branches" -- "$cur") )
+    fi
+}
+
+complete -F _git_chain git
+EOF
+)
+
+if ! grep -q "_git_chain" "$HOME/.bashrc"; then
+  echo "$COMPLETION_SCRIPT" >> "$HOME/.bashrc"
+  echo "Added tab completion for 'git chain' to .bashrc. Restart your shell or run 'source ~/.bashrc' to apply changes."
+fi
+
 echo "Installation complete! You can now use 'git chain' and 'git merge' with parent checks."
