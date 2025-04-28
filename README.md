@@ -102,9 +102,13 @@ Additionally you need to
 ## Usage
 
 ### `git-chain`
-- Set a parent branch:
+- Set a parent branch (You can use tab-complete for branch name):
   ```bash
   git chain <parent-branch>
+  ```
+- Remove the chain for the current branch:
+  ```bash
+  git chain --clear
   ```
 - Show the chain for the current branch:
   ```bash
