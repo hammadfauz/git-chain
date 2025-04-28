@@ -65,6 +65,12 @@ set_chain() {
         exit 1
     fi
 
+    # Check if the parent branch exists
+    if ! git show-ref --verify --quiet "refs/heads/$parent"; then
+        echo "Error: Parent branch '$parent' does not exist."
+        exit 1
+    fi
+
     # Read the JSON notes
     local json
     json=$(read_chains)
