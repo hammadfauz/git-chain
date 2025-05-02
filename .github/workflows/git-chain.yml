@@ -122,6 +122,10 @@ jobs:
             ) | from_entries
           ')
 
+          # Configure Git user identity
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
           # Save the updated JSON back to the note
           echo "$updated_json" | git notes add -f -F - "$first_commit"
 
