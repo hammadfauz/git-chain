@@ -55,7 +55,7 @@ _git_chain() {
     fi
 }
 
-complete -F _git_chain git
+complete -F _git_chain -o default git-chain
 EOF
 )
 
