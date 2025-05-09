@@ -3,6 +3,9 @@ name: Git Chain Management
 on:
   pull_request:
     types: [opened, edited, closed, synchronize]
+permissions:
+  pull-requests: write
+  contents: write
 
 jobs:
   check-parent-branch:
