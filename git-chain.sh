@@ -145,7 +145,8 @@ sync_chain() {
   if [ "$action" == "push" ]; then
     git push origin refs/notes/commits
   elif [ "$action" == "pull" ]; then
-    git fetch origin refs/notes/*:refs/notes/*
+    git fetch origin refs/notes/*:refs/notes/origin/*
+    git notes merge -v origin/commits
   else
     echo "Usage: git $action --chain"
     exit 1
